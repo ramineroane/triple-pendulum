@@ -5,19 +5,20 @@ A graphical simulation of a triple (3-link) pendulum using Lagrangian mechanics.
 
 The equations of motion are derived from the Lagrangian L = T - V for three
 point masses connected by rigid, massless rods. The resulting system of 6
-first-order ODEs is solved with scipy.integrate.solve_ivp (RK45) and animated
-in real time with matplotlib.
+first-order ODEs is solved with scipy.integrate.solve_ivp (RK45) and rendered
+to an animated GIF.
 
-Controls:
-    - Close the window to stop the simulation.
-
-Dependencies: numpy, scipy, matplotlib
+Dependencies: numpy, scipy, matplotlib, pillow
 """
+
+import matplotlib
+matplotlib.use("Agg")
 
 import numpy as np
 from scipy.integrate import solve_ivp
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
+import os
 
 # ─────────────────────────── Physical parameters ───────────────────────────
 
@@ -40,10 +41,13 @@ omega3_0 = 0.0               # initial angular velocity of rod 3
 
 # ──────────────────────── Simulation parameters ────────────────────────────
 
-T_MAX = 60.0    # total simulation time (s)
+T_MAX = 15.0    # total simulation time (s)
 DT = 0.005      # time step for the ODE solver output (s)
-FPS = 50        # animation frames per second
-TRAIL_LEN = 600 # number of past positions to draw in the trail
+FPS = 30        # animation frames per second
+TRAIL_LEN = 400 # number of past positions to draw in the trail
+
+# Output path (saved next to this script)
+OUTPUT_GIF = os.path.join(os.path.dirname(os.path.abspath(__file__)), "triple_pendulum.gif")
 
 
 # ─────────────────── Equations of motion (mass-matrix form) ────────────────
@@ -128,9 +132,6 @@ print("done.")
 th1_sol = sol.y[0]
 th2_sol = sol.y[1]
 th3_sol = sol.y[2]
-w1_sol = sol.y[3]
-w2_sol = sol.y[4]
-w3_sol = sol.y[5]
 
 # Convert to Cartesian coordinates
 x1 = L1 * np.sin(th1_sol)
@@ -141,41 +142,13 @@ x3 = x2 + L3 * np.sin(th3_sol)
 y3 = y2 - L3 * np.cos(th3_sol)
 
 
-# ─────────────────────────── Energy computation ────────────────────────────
-
-def compute_energy(th1, th2, th3, w1, w2, w3):
-    """Return (kinetic, potential, total) energy of the system."""
-    # Velocities of each bob (Cartesian)
-    vx1 = L1 * w1 * np.cos(th1)
-    vy1 = L1 * w1 * np.sin(th1)
-
-    vx2 = vx1 + L2 * w2 * np.cos(th2)
-    vy2 = vy1 + L2 * w2 * np.sin(th2)
-
-    vx3 = vx2 + L3 * w3 * np.cos(th3)
-    vy3 = vy2 + L3 * w3 * np.sin(th3)
-
-    T = 0.5 * M1 * (vx1 ** 2 + vy1 ** 2)
-    T += 0.5 * M2 * (vx2 ** 2 + vy2 ** 2)
-    T += 0.5 * M3 * (vx3 ** 2 + vy3 ** 2)
-
-    V = M1 * G * (-L1 * np.cos(th1))
-    V += M2 * G * (-L1 * np.cos(th1) - L2 * np.cos(th2))
-    V += M3 * G * (-L1 * np.cos(th1) - L2 * np.cos(th2) - L3 * np.cos(th3))
-
-    return T, V, T + V
-
-
-KE, PE, TE = compute_energy(th1_sol, th2_sol, th3_sol,
-                            w1_sol, w2_sol, w3_sol)
-
 # ─────────────────────────── Animation setup ───────────────────────────────
 
 # Subsample: pick every n-th frame so we hit the target FPS
 frame_step = max(1, int(1.0 / (FPS * DT)))
 n_frames = len(t_eval) // frame_step
 
-fig, ax = plt.subplots(figsize=(8, 8))
+fig, ax = plt.subplots(figsize=(6, 6), dpi=100)
 fig.patch.set_facecolor("#1a1a2e")
 ax.set_facecolor("#1a1a2e")
 
@@ -203,10 +176,6 @@ for c in trail_colors:
     tl, = ax.plot([], [], "-", color=c, lw=0.8, alpha=0.55, zorder=2)
     trail_lines.append(tl)
 
-# Energy text
-energy_text = ax.text(0.02, 0.97, "", transform=ax.transAxes, fontsize=9,
-                       color="#b0b0d0", verticalalignment="top",
-                       fontfamily="monospace")
 time_text = ax.text(0.98, 0.97, "", transform=ax.transAxes, fontsize=9,
                      color="#b0b0d0", verticalalignment="top",
                      horizontalalignment="right", fontfamily="monospace")
@@ -219,9 +188,8 @@ def init():
     line.set_data([], [])
     for tl in trail_lines:
         tl.set_data([], [])
-    energy_text.set_text("")
     time_text.set_text("")
-    return (line, *trail_lines, energy_text, time_text)
+    return (line, *trail_lines, time_text)
 
 
 # Trail history buffers
@@ -246,15 +214,9 @@ def animate(frame):
             ty.pop(0)
         trail_lines[k].set_data(tx, ty)
 
-    # Energy readout
-    energy_text.set_text(
-        f"KE  = {KE[i]:+8.3f} J\n"
-        f"PE  = {PE[i]:+8.3f} J\n"
-        f"Tot = {TE[i]:+8.3f} J"
-    )
     time_text.set_text(f"t = {t_eval[i]:6.2f} s")
 
-    return (line, *trail_lines, energy_text, time_text)
+    return (line, *trail_lines, time_text)
 
 
 ani = animation.FuncAnimation(fig, animate, init_func=init,
@@ -262,4 +224,8 @@ ani = animation.FuncAnimation(fig, animate, init_func=init,
                               blit=True)
 
 plt.tight_layout()
-plt.show()
+print(f"Rendering {n_frames} frames to GIF … ", end="", flush=True)
+ani.save(OUTPUT_GIF, writer="pillow", fps=FPS)
+plt.close()
+print("done.")
+print(f"Saved: {OUTPUT_GIF}")
